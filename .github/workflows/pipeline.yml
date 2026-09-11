@@ -29,6 +29,12 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Decode YouTube cookies (si configurés)
+        if: ${{ secrets.YOUTUBE_COOKIES_B64 != '' }}
+        run: |
+          echo "${{ secrets.YOUTUBE_COOKIES_B64 }}" | base64 -d > "$RUNNER_TEMP/cookies.txt"
+          echo "YT_COOKIES_FILE=$RUNNER_TEMP/cookies.txt" >> "$GITHUB_ENV"
+
       - name: Detect new videos (Étape 1)
         env:
           NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
