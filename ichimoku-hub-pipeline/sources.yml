@@ -1,0 +1,13 @@
+# Liste des chaînes YouTube à surveiller pour le Ichimoku Hub.
+#
+# Pour ajouter une source : ajoute une entrée ici, commit, push.
+# Aucune autre modification n'est nécessaire — le workflow GitHub Actions
+# lit ce fichier à chaque exécution.
+#
+# streams_url est optionnel : mets `null` (ou retire la ligne) si la chaîne
+# ne fait pas de lives.
+
+channels:
+  - name: "@KeiForex"
+    videos_url: "https://www.youtube.com/@KeiForex/videos"
+    streams_url: "https://www.youtube.com/@KeiForex/streams"
