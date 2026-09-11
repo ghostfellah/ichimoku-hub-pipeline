@@ -5,6 +5,15 @@ les dernières 24h (72h le lundi) sur les chaînes listées dans sources.yml,
 et crée une ligne dans la base Notion "Vidéos — Sources" pour chacune,
 si elle n'existe pas déjà (dédup sur "Vidéo ID").
 
+Utilise UNIQUEMENT le listing "flat playlist" (avec l'option d'extracteur
+youtubetab:approximate_date pour récupérer la date directement) — PAS
+d'appel individuel par vidéo. Un appel complet par vidéo (yt-dlp
+--print upload_date) se fait quasi systématiquement bloquer par YouTube
+("Sign in to confirm you're not a bot") sur les IPs des runners GitHub
+Actions, même avec des cookies ; le listing léger, lui, passe.
+La date obtenue est approximative (arrondie au jour) mais suffisante pour
+une fenêtre de 24h/72h.
+
 Ne fait AUCUNE extraction de concepts : ça reste le travail de Claude, qui
 lit ensuite les transcriptions produites par extract_transcripts.py.
 """
@@ -30,7 +39,9 @@ KEYWORDS = [
 def run_ytdlp_json(url: str) -> dict | None:
     cmd = [
         "yt-dlp", "--flat-playlist", "--playlist-items", "1-10",
-        *EXTRACTOR_ARGS, *cookie_args(), "--dump-single-json", url,
+        *EXTRACTOR_ARGS,
+        "--extractor-args", "youtubetab:approximate_date",
+        *cookie_args(), "--dump-single-json", url,
     ]
     try:
         out = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
@@ -46,37 +57,23 @@ def run_ytdlp_json(url: str) -> dict | None:
         return None
 
 
-def get_video_meta(video_id: str) -> dict | None:
-    url = f"https://www.youtube.com/watch?v={video_id}"
-    cmd = [
-        "yt-dlp", "--skip-download", *EXTRACTOR_ARGS, *cookie_args(),
-        "--print", "%(upload_date)s|||%(duration)s|||%(title)s",
-        url,
-    ]
+def parse_upload_date(entry: dict) -> str | None:
+    """YYYYMMDD -> YYYY-MM-DD, ou None si absent/invalide."""
+    raw = entry.get("upload_date")
+    if not raw or not isinstance(raw, str) or len(raw) != 8:
+        return None
     try:
-        out = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
-    except subprocess.TimeoutExpired:
-        print(f"  [!] timeout métadonnées {video_id}", file=sys.stderr)
+        return f"{raw[0:4]}-{raw[4:6]}-{raw[6:8]}"
+    except (IndexError, ValueError):
         return None
-    if out.returncode != 0 or not out.stdout.strip():
-        reason = (out.stderr or "").strip().splitlines()[-1] if out.stderr else "sortie vide"
-        print(f"  [!] échec métadonnées {video_id}: {reason[:200]}", file=sys.stderr)
-        return None
-    line = out.stdout.strip().splitlines()[-1]
-    parts = line.split("|||")
-    if len(parts) != 3:
-        return None
-    upload_date, duration, title = parts
-    meta = {"title": title if title != "NA" else None}
-    if upload_date and upload_date != "NA" and len(upload_date) == 8:
-        meta["upload_date"] = f"{upload_date[0:4]}-{upload_date[4:6]}-{upload_date[6:8]}"
-    else:
-        meta["upload_date"] = None
+
+
+def parse_duration_min(entry: dict) -> float | None:
+    duration = entry.get("duration")
     try:
-        meta["duration_min"] = round(float(duration) / 60, 1)
+        return round(float(duration) / 60, 1) if duration is not None else None
     except (ValueError, TypeError):
-        meta["duration_min"] = None
-    return meta
+        return None
 
 
 def pertinence_for(title: str) -> str:
@@ -91,7 +88,7 @@ def load_sources() -> list[dict]:
 
 
 def collect_candidates(sources: list[dict], cutoff_date: dt.date) -> list[dict]:
-    candidates: dict[str, dict] = {}
+    kept: dict[str, dict] = {}
     for channel in sources:
         for tab_key in ("videos_url", "streams_url"):
             tab_url = channel.get(tab_key)
@@ -104,33 +101,23 @@ def collect_candidates(sources: list[dict], cutoff_date: dt.date) -> list[dict]:
             entries = data.get("entries") or []
             for entry in entries:
                 vid = entry.get("id")
-                if not vid or vid in candidates:
+                if not vid or vid in kept:
                     continue
-                candidates[vid] = {
+                upload_date = parse_upload_date(entry)
+                if not upload_date:
+                    print(f"  [!] pas de date (approximate_date) pour {vid}, ignoré")
+                    continue
+                pub_date = dt.date.fromisoformat(upload_date)
+                if pub_date < cutoff_date:
+                    continue
+                kept[vid] = {
                     "id": vid,
                     "title": entry.get("title") or "",
+                    "upload_date": upload_date,
+                    "duration_min": parse_duration_min(entry),
                     "source": channel["name"],
                 }
-
-    kept = []
-    for vid, base in candidates.items():
-        meta = get_video_meta(vid)
-        if not meta or not meta.get("upload_date"):
-            continue
-        pub_date = dt.date.fromisoformat(meta["upload_date"])
-        if pub_date < cutoff_date:
-            continue
-        title = meta.get("title") or base["title"]
-        kept.append(
-            {
-                "id": vid,
-                "title": title,
-                "upload_date": meta["upload_date"],
-                "duration_min": meta.get("duration_min"),
-                "source": base["source"],
-            }
-        )
-    return kept
+    return list(kept.values())
 
 
 def main() -> None:
