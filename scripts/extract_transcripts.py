@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import glob
 import os
+import random
 import re
 import subprocess
 import sys
@@ -56,8 +57,13 @@ def clean_vtt(text: str) -> str:
     return "\n".join(out)
 
 
-def download_subtitles(video_id: str, url: str, attempts: int = 3) -> str | None:
+BACKOFF_SECONDS = [15, 30, 60, 90, 120]
+INTER_VIDEO_DELAY = (10, 20)  # secondes, aléatoire, entre deux vidéos
+
+
+def download_subtitles(video_id: str, url: str, attempts: int | None = None) -> str | None:
     """Télécharge les sous-titres (VTT) et renvoie le texte nettoyé, ou None."""
+    attempts = attempts or len(BACKOFF_SECONDS)
     for attempt in range(1, attempts + 1):
         with tempfile.TemporaryDirectory() as tmp:
             out_template = os.path.join(tmp, f"{video_id}.%(ext)s")
@@ -73,7 +79,9 @@ def download_subtitles(video_id: str, url: str, attempts: int = 3) -> str | None
                     return clean_vtt(f.read())
             stderr = result.stderr or ""
             if "429" in stderr or "Sign in to confirm" in stderr:
-                wait = 8 * attempt
+                if attempt >= attempts:
+                    break
+                wait = BACKOFF_SECONDS[attempt - 1]
                 print(f"    [.] rate-limited, retry dans {wait}s ({attempt}/{attempts})")
                 time.sleep(wait)
                 continue
@@ -109,7 +117,11 @@ def main() -> None:
     print(f"[*] {len(backlog)} vidéo(s) sélectionnée(s) pour extraction (limite={limit}).")
 
     done, failed = 0, 0
-    for row in backlog:
+    for i, row in enumerate(backlog):
+        if i > 0:
+            pause = random.uniform(*INTER_VIDEO_DELAY)
+            print(f"[.] pause {pause:.0f}s avant la prochaine vidéo ...")
+            time.sleep(pause)
         props = row["properties"]
         page_id = row["id"]
         video_id = get_plain_text(props.get("Vidéo ID"))
