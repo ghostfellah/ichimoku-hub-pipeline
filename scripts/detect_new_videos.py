@@ -37,9 +37,11 @@ KEYWORDS = [
 
 
 def run_ytdlp_json(url: str) -> dict | None:
+    # NB: pas de *EXTRACTOR_ARGS (youtube:player_client=android) ici : combiné
+    # à youtubetab:approximate_date, il fait disparaître le champ upload_date
+    # (bug connu de yt-dlp sur ce type de combinaison d'extractor-args).
     cmd = [
         "yt-dlp", "--flat-playlist", "--playlist-items", "1-10",
-        *EXTRACTOR_ARGS,
         "--extractor-args", "youtubetab:approximate_date",
         *cookie_args(), "--dump-single-json", url,
     ]
@@ -58,14 +60,23 @@ def run_ytdlp_json(url: str) -> dict | None:
 
 
 def parse_upload_date(entry: dict) -> str | None:
-    """YYYYMMDD -> YYYY-MM-DD, ou None si absent/invalide."""
+    """Renvoie YYYY-MM-DD à partir de upload_date (YYYYMMDD) ou, à défaut,
+    d'un timestamp Unix (release_timestamp / timestamp), ou None si rien
+    d'exploitable n'est présent."""
     raw = entry.get("upload_date")
-    if not raw or not isinstance(raw, str) or len(raw) != 8:
-        return None
-    try:
-        return f"{raw[0:4]}-{raw[4:6]}-{raw[6:8]}"
-    except (IndexError, ValueError):
-        return None
+    if raw and isinstance(raw, str) and len(raw) == 8:
+        try:
+            return f"{raw[0:4]}-{raw[4:6]}-{raw[6:8]}"
+        except (IndexError, ValueError):
+            pass
+    for key in ("release_timestamp", "timestamp"):
+        ts = entry.get(key)
+        if ts:
+            try:
+                return dt.datetime.fromtimestamp(float(ts), tz=dt.timezone.utc).date().isoformat()
+            except (ValueError, TypeError, OSError):
+                continue
+    return None
 
 
 def parse_duration_min(entry: dict) -> float | None:
@@ -99,6 +110,9 @@ def collect_candidates(sources: list[dict], cutoff_date: dt.date) -> list[dict]:
             if not data:
                 continue
             entries = data.get("entries") or []
+            if entries:
+                sample = {k: entries[0].get(k) for k in ("id", "title", "upload_date", "release_timestamp", "timestamp", "duration")}
+                print(f"  [debug] premier entry brut : {json.dumps(sample, ensure_ascii=False)}")
             for entry in entries:
                 vid = entry.get("id")
                 if not vid or vid in kept:
