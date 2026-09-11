@@ -19,19 +19,18 @@ import sys
 import yaml
 
 from notion_client import NotionClient, prop_date, prop_number, prop_rich_text, prop_select, prop_title, prop_url
+from ytdlp_common import EXTRACTOR_ARGS, cookie_args
 
 KEYWORDS = [
     "ichimoku", "kumo", "tenkan", "kijun", "chiko", "chikou", "sanyaku",
     "senkou", "senko", "kihon suchi", "taito suchi", "kts",
 ]
 
-YTDLP_EXTRACTOR_ARGS = ["--extractor-args", "youtube:player_client=android"]
-
 
 def run_ytdlp_json(url: str) -> dict | None:
     cmd = [
         "yt-dlp", "--flat-playlist", "--playlist-items", "1-10",
-        *YTDLP_EXTRACTOR_ARGS, "--dump-single-json", url,
+        *EXTRACTOR_ARGS, *cookie_args(), "--dump-single-json", url,
     ]
     try:
         out = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
@@ -50,15 +49,18 @@ def run_ytdlp_json(url: str) -> dict | None:
 def get_video_meta(video_id: str) -> dict | None:
     url = f"https://www.youtube.com/watch?v={video_id}"
     cmd = [
-        "yt-dlp", "--skip-download", *YTDLP_EXTRACTOR_ARGS,
+        "yt-dlp", "--skip-download", *EXTRACTOR_ARGS, *cookie_args(),
         "--print", "%(upload_date)s|||%(duration)s|||%(title)s",
         url,
     ]
     try:
         out = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
     except subprocess.TimeoutExpired:
+        print(f"  [!] timeout métadonnées {video_id}", file=sys.stderr)
         return None
     if out.returncode != 0 or not out.stdout.strip():
+        reason = (out.stderr or "").strip().splitlines()[-1] if out.stderr else "sortie vide"
+        print(f"  [!] échec métadonnées {video_id}: {reason[:200]}", file=sys.stderr)
         return None
     line = out.stdout.strip().splitlines()[-1]
     parts = line.split("|||")
@@ -114,7 +116,6 @@ def collect_candidates(sources: list[dict], cutoff_date: dt.date) -> list[dict]:
     for vid, base in candidates.items():
         meta = get_video_meta(vid)
         if not meta or not meta.get("upload_date"):
-            print(f"  [!] pas de date pour {vid}, ignoré", file=sys.stderr)
             continue
         pub_date = dt.date.fromisoformat(meta["upload_date"])
         if pub_date < cutoff_date:

@@ -50,6 +50,43 @@ si demandé. Le pipeline tourne ensuite automatiquement tous les jours à
 9h00 UTC, et est déclenchable manuellement via **Actions → Ichimoku Hub
 Pipeline → Run workflow**.
 
+## YouTube bloque les runners GitHub Actions (important)
+
+Les IPs partagées des runners GitHub-hosted sont très souvent bloquées ou
+rate-limitées par YouTube (`429`, "Sign in to confirm you're not a bot")
+dès qu'on dépasse le simple listing "flat playlist" — c'est-à-dire pour
+**toute récupération de métadonnées vidéo détaillées (dates) et tout
+téléchargement de sous-titres**. Symptôme typique : le workflow se termine
+en vert, mais `SUMMARY:` indique 0 vidéo ajoutée / 0 transcription, avec des
+lignes `rate-limited` ou `pas de date` dans les logs.
+
+**Solution : passer des cookies YouTube à yt-dlp.** Une requête authentifiée
+avec les cookies d'une session connectée est beaucoup moins souvent bloquée.
+
+1. Connecte-toi à YouTube dans ton navigateur avec un compte Google
+   (un compte secondaire/dédié est plus prudent qu'un compte principal,
+   puisque ces cookies donnent l'équivalent d'un accès à la session).
+2. Installe une extension du type **"Get cookies.txt LOCALLY"** (Chrome/
+   Firefox), va sur youtube.com, exporte les cookies au format Netscape
+   (`cookies.txt`).
+3. Encode le fichier en base64 :
+   ```
+   base64 -w0 cookies.txt > cookies.b64.txt   # Linux
+   base64 -i cookies.txt -o cookies.b64.txt   # macOS
+   ```
+4. Ajoute un secret GitHub `YOUTUBE_COOKIES_B64` avec le contenu de
+   `cookies.b64.txt`.
+5. Le workflow le décode automatiquement à chaque run (étape "Decode
+   YouTube cookies") et le passe à tous les appels yt-dlp via
+   `--cookies`. Rien à faire côté scripts.
+
+Ces cookies expirent / tournent avec le temps (généralement plusieurs
+semaines à quelques mois) : si le pipeline recommence à ne rien produire
+avec les mêmes symptômes (`rate-limited`, `pas de date`), regénère-les.
+
+Sans ce secret configuré, le pipeline continue de fonctionner mais restera
+probablement bloqué par YouTube comme observé aujourd'hui.
+
 ## Gérer les sources YouTube
 
 Édite `sources.yml` :

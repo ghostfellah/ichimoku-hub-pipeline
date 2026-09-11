@@ -23,13 +23,13 @@ import tempfile
 import time
 
 from notion_client import NotionClient, get_plain_text, get_url, prop_select
+from ytdlp_common import EXTRACTOR_ARGS, cookie_args
 
 STATUT_A_TRAITER = "⏳ À traiter"
 STATUT_EN_COURS = "🔎 En cours"
 PERTINENCE_ICHIMOKU = "🎯 Ichimoku"
 
 TRANSCRIPTS_DIR = os.path.join(os.path.dirname(__file__), "..", "transcripts")
-YTDLP_EXTRACTOR_ARGS = ["--extractor-args", "youtube:player_client=android"]
 
 
 def clean_vtt(text: str) -> str:
@@ -64,7 +64,7 @@ def download_subtitles(video_id: str, url: str, attempts: int = 3) -> str | None
             cmd = [
                 "yt-dlp", "--skip-download", "--write-auto-sub", "--write-sub",
                 "--sub-lang", "en", "--sub-format", "vtt",
-                *YTDLP_EXTRACTOR_ARGS, "-o", out_template, url,
+                *EXTRACTOR_ARGS, *cookie_args(), "-o", out_template, url,
             ]
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
             vtt_files = glob.glob(os.path.join(tmp, "*.vtt"))
@@ -80,6 +80,7 @@ def download_subtitles(video_id: str, url: str, attempts: int = 3) -> str | None
             # pas de sous-titres du tout (vidéo sans caption) -> inutile de retenter
             print(f"    [!] pas de sous-titres trouvés pour {video_id}: {stderr[:300]}")
             return None
+    print(f"    [!] abandon après {attempts} tentative(s) rate-limitées pour {video_id}")
     return None
 
 
