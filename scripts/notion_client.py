@@ -2,7 +2,7 @@
 Petit client Notion minimal pour le pipeline Ichimoku Hub.
 
 Utilise le modèle "data source" de l'API Notion (Notion-Version 2026-03-11) :
-- interroger une base       -> PATCH /v1/data_sources/{data_source_id}/query
+- interroger une base       -> POST  /v1/data_sources/{data_source_id}/query
 - créer une page            -> POST  /v1/pages   (parent = {"type": "data_source_id", ...})
 - mettre à jour une page    -> PATCH /v1/pages/{page_id}
 """
@@ -63,7 +63,7 @@ class NotionClient:
             if cursor:
                 body["start_cursor"] = cursor
             data = self._request(
-                "PATCH", f"/data_sources/{data_source_id}/query", json=body
+                "POST", f"/data_sources/{data_source_id}/query", json=body
             )
             for row in data.get("results", []):
                 yield row
