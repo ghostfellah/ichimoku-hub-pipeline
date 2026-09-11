@@ -30,10 +30,16 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Decode YouTube cookies (si configurés)
-        if: ${{ secrets.YOUTUBE_COOKIES_B64 != '' }}
+        env:
+          YOUTUBE_COOKIES_B64: ${{ secrets.YOUTUBE_COOKIES_B64 }}
         run: |
-          echo "${{ secrets.YOUTUBE_COOKIES_B64 }}" | base64 -d > "$RUNNER_TEMP/cookies.txt"
-          echo "YT_COOKIES_FILE=$RUNNER_TEMP/cookies.txt" >> "$GITHUB_ENV"
+          if [ -n "$YOUTUBE_COOKIES_B64" ]; then
+            echo "$YOUTUBE_COOKIES_B64" | base64 -d > "$RUNNER_TEMP/cookies.txt"
+            echo "YT_COOKIES_FILE=$RUNNER_TEMP/cookies.txt" >> "$GITHUB_ENV"
+            echo "Cookies YouTube chargés."
+          else
+            echo "Pas de secret YOUTUBE_COOKIES_B64 configuré, poursuite sans cookies."
+          fi
 
       - name: Detect new videos (Étape 1)
         env:
@@ -41,21 +47,4 @@ jobs:
           NOTION_VIDEOS_DATA_SOURCE_ID: "75c495f5-81ac-4bd8-bd17-01b8047f0e93"
         run: python scripts/detect_new_videos.py
 
-      - name: Extract transcripts for Ichimoku backlog (Étape 2, partie mécanique)
-        env:
-          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
-          NOTION_VIDEOS_DATA_SOURCE_ID: "75c495f5-81ac-4bd8-bd17-01b8047f0e93"
-          TRANSCRIPT_LIMIT: "8"
-        run: python scripts/extract_transcripts.py
-
-      - name: Commit transcripts
-        run: |
-          git config user.name "ichimoku-hub-bot"
-          git config user.email "actions@users.noreply.github.com"
-          git add transcripts/
-          if git diff --cached --quiet; then
-            echo "Aucune nouvelle transcription à committer."
-          else
-            git commit -m "chore: nouvelles transcriptions [skip ci]"
-            git push
-          fi
+      - name: Extract transcripts
